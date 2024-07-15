@@ -1,34 +1,69 @@
-from langchain_community.utilities import SQLDatabase
-from langchain_community.llms import Ollama
-from langchain_community.tools.sql_database.tool import QuerySQLDataBaseTool
-from langchain.chains import create_sql_query_chain
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from operator import itemgetter
+"""
+Simple FastAPI Application for Question-Answering System with PDF Upload
+Author: Umang Tank
+"""
+import os
 
-db = SQLDatabase.from_uri("sqlite:///mydatabase.db")
-llm = Ollama(model = "llama2")
+from fastapi import FastAPI
+from fastapi import File
+from fastapi import HTTPException
+from fastapi import UploadFile
+from fastapi.responses import JSONResponse
+
+from modules import load_model  # Assuming correct import path
+from utils import common
+from utils import schema
+
+app = FastAPI()
 
 
-answer_prompt = PromptTemplate.from_template(
-    """Given the following user question, corresponding SQL query, and SQL result, answer the user question.
+@app.get("/")
+def read_root():
+    """
+    Root endpoint to verify if all models are initialized.
+    """
+    return "All models initialized"
 
-Question: {question}
-SQL Query: {query}
-SQL Result: {result}
-Answer: """
-)
 
-execute_query = QuerySQLDataBaseTool(db=db)
-write_query = create_sql_query_chain(llm, db)
+@app.post("/AskQA")
+def ask_question(request: schema.QuestionRequest):
+    """
+    Endpoint to ask a question and get an answer from the loaded model.
 
-answer = answer_prompt | llm | StrOutputParser()
-chain = (
-    RunnablePassthrough.assign(query=write_query).assign(
-        result=itemgetter("query") | execute_query
-    )
-    | answer
-)
+    Args:
+        request (schema.QuestionRequest): Request body containing the question.
 
-print(chain.invoke({"question" : "how many unique products are there "}))
+    Returns:
+        dict: Response containing the answer or error message.
+    """
+    try:
+        model = load_model.LoadMOdel()
+        question = request.question
+        answer = model.load_llm().invoke(question)
+        return {"Answer": answer}
+    except Exception as error:
+        return {"Error": str(error)}
+
+
+@app.post("/upload-pdf/")
+async def upload_pdf(file: UploadFile = File(...)):
+    """
+    Endpoint to upload a PDF file.
+
+    Args:
+        file (UploadFile): PDF file uploaded by the user.
+
+    Returns:
+        JSONResponse: JSON response indicating success or failure.
+    """
+    try:
+        print(file.filename)
+        contents = await file.read()
+        print(contents)
+        common.CreateDB(contents, file)
+
+        return JSONResponse(
+            content={"message": "File uploaded successfully and chunks created"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
