@@ -1,9 +1,11 @@
 import os
 
+from langchain.chains import RetrievalQA
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 from langchain_community.vectorstores import FAISS
+
+from utils import constants
 
 
 def CreateDB(contents, file):
@@ -18,6 +20,11 @@ def CreateDB(contents, file):
     docs = loader.load()
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=50)
     documents = text_splitter.split_documents(docs)
-    embedings = HuggingFaceBgeEmbeddings()
-    db = FAISS.from_documents(documents, embedings)
+    db = FAISS.from_documents(documents, constants.embedings)
     db.save_local("faiss_index")
+
+
+def ChainCreation(llm):
+    db = FAISS.load_local("faiss_index", constants.embedings)
+    Retriever = db.as_retriever(search_type="similarity")
+    chain = RetrievalQA.from_chain_type(llm, retriever=Retriever)

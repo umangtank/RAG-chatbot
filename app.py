@@ -4,49 +4,51 @@ Author: Umang Tank
 """
 import os
 
-from fastapi import FastAPI
-from fastapi import File
-from fastapi import HTTPException
-from fastapi import UploadFile
-from fastapi.responses import JSONResponse
+import fastapi
 
 from modules import load_model  # Assuming correct import path
 from utils import common
 from utils import schema
 
-app = FastAPI()
+app = fastapi.FastAPI()
 
 
 @app.get("/")
-def read_root():
+def read_root() -> str:
     """
     Root endpoint to verify if all models are initialized.
+
+    Returns:
+        str: Confirmation message indicating models are initialized.
     """
     return "All models initialized"
 
 
 @app.post("/AskQA")
-def ask_question(request: schema.QuestionRequest):
+def ask_question(request: schema.ask_questionRequest) -> schema.ask_questionResponse:
     """
     Endpoint to ask a question and get an answer from the loaded model.
 
     Args:
-        request (schema.QuestionRequest): Request body containing the question.
+        request (schema.ask_questionRequest): Request body containing the question.
 
     Returns:
-        dict: Response containing the answer or error message.
+        schema.ask_questionResponse: Response containing the answer or error message.
     """
     try:
         model = load_model.LoadMOdel()
         question = request.question
-        answer = model.load_llm().invoke(question)
-        return {"Answer": answer}
-    except Exception as error:
-        return {"Error": str(error)}
+        llm = model.load_llm()
+        answer = common.ChainCreation(llm)({"query": question})
+        return schema.ask_questionResponse(answer=answer)
+    except Exception as exc:
+        return fastapi.JSONResponse(status_code=500, content={"error": str(exc)})
 
 
 @app.post("/upload-pdf/")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: fastapi.UploadFile = fastapi.File(...),
+) -> schema.upload_pdfResponse:
     """
     Endpoint to upload a PDF file.
 
@@ -54,7 +56,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         file (UploadFile): PDF file uploaded by the user.
 
     Returns:
-        JSONResponse: JSON response indicating success or failure.
+        schema.upload_pdfResponse: JSON response indicating success or failure.
     """
     try:
         print(file.filename)
@@ -62,8 +64,24 @@ async def upload_pdf(file: UploadFile = File(...)):
         print(contents)
         common.CreateDB(contents, file)
 
-        return JSONResponse(
-            content={"message": "File uploaded successfully and chunks created"}
+        return schema.upload_pdfResponse(
+            message="File uploaded successfully and chunks created"
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+    except Exception as exc:
+        return fastapi.JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+@app.post("/DeleteDB")
+def delete_db() -> schema.delete_dbResponse:
+    """
+    Endpoint to delete the database files.
+
+    Returns:
+        schema.delete_dbResponse: Response indicating the database was deleted successfully.
+    """
+    try:
+        os.remove("faiss_index")
+        os.remove("documents")
+        return schema.delete_dbResponse(message="Database deleted successfully")
+    except Exception as exc:
+        return fastapi.JSONResponse(status_code=500, content={"error": str(exc)})
